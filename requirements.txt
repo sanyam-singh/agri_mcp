@@ -1,6 +1,7 @@
 fastapi>=0.115.0,<0.116.0
 uvicorn[standard]>=0.34.0,<0.35.0
 graphene>=3.3,<3.5
+graphene-starlette>=0.3.0,<0.4.0
 
 # Core dependencies of FastAPI
 starlette>=0.37.2,<0.47.0 # Looser upper bound for starlette as it's a direct dep of fastapi
