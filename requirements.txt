@@ -1,0 +1,18 @@
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.34.0,<0.35.0
+graphene>=3.3,<3.5
+
+# Core dependencies of FastAPI
+starlette>=0.37.2,<0.47.0 # Looser upper bound for starlette as it's a direct dep of fastapi
+pydantic>=2.0,<3.0
+
+# Core dependencies of Graphene
+graphql-core>=3.2.0,<3.3.0
+graphql-relay>=3.2.0,<3.3.0
+
+# Transitive dependencies (minimal set)
+# From Starlette/FastAPI
+anyio>=3.6.0,<5.0
+sniffio>=1.0,<2.0
+typing_extensions>=4.0,<5.0 # Pydantic and Starlette need this
+h11>=0.11,<0.17 # For Uvicorn standard
