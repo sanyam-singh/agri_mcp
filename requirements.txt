@@ -20,3 +20,4 @@ anyio>=3.6.0,<5.0
 sniffio>=1.0,<2.0
 typing_extensions>=4.0,<5.0 # Ariadne also uses this
 h11>=0.11,<0.17 # From uvicorn[standard]
+pandas>=1.0.0,<2.3.0

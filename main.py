@@ -92,6 +92,83 @@ MCP_TOOLS = [
             "end_year": {"type": "string", "description": "End year (YYYY)"}
         },
         "requires_api_key": False
+    },
+    {
+        "name": "CHIRPSPrecipitation",
+        "description": "Get CHIRPS precipitation data (mocked).",
+        "parameters": {
+            "lat": {"type": "float", "description": "Latitude"},
+            "lon": {"type": "float", "description": "Longitude"},
+            "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+            "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+            "temporal_resolution": {"type": "string", "description": "'daily', 'monthly', or 'seasonal' (default: daily)"}
+        },
+        "requires_api_key": False # Mocked, actual might vary
+    },
+    {
+        "name": "SMAPSoilMoisture",
+        "description": "Get SMAP soil moisture data (mocked).",
+        "parameters": {
+            "lat": {"type": "float", "description": "Latitude"},
+            "lon": {"type": "float", "description": "Longitude"},
+            "date": {"type": "string", "description": "Date (YYYY-MM-DD)"},
+            "product": {"type": "string", "description": "SMAP product level (default: SPL3SMP)"}
+        },
+        "requires_api_key": False # Mocked
+    },
+    {
+        "name": "GRACEGroundwater",
+        "description": "Get GRACE groundwater storage data (mocked).",
+        "parameters": {
+            "lat": {"type": "float", "description": "Latitude"},
+            "lon": {"type": "float", "description": "Longitude"},
+            "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+            "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"}
+        },
+        "requires_api_key": False # Mocked
+    },
+    {
+        "name": "Sentinel2Data",
+        "description": "Get Sentinel-2 satellite data summary (mocked).",
+        "parameters": {
+            "lat": {"type": "float", "description": "Latitude"},
+            "lon": {"type": "float", "description": "Longitude"},
+            "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+            "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+            "cloud_cover_max": {"type": "integer", "description": "Max cloud coverage % (default: 20)"},
+            "bands": {"type": "list_string", "description": "List of spectral bands (e.g., ['B04', 'B08']) (default: ['B04', 'B08', 'B11'])"}
+        },
+        "requires_api_key": False # Mocked, real Sentinel Hub access often needs auth
+    },
+    {
+        "name": "FAOPriceData",
+        "description": "Get FAO agricultural commodity price data (mocked).",
+        "parameters": {
+            "country": {"type": "string", "description": "Country name"},
+            "commodity": {"type": "string", "description": "Commodity name"}
+        },
+        "requires_api_key": False # Mocked, actual API might have key option
+    },
+    {
+        "name": "USDACropScape",
+        "description": "Get USDA CropScape crop type identification (mocked).",
+        "parameters": {
+            "lat": {"type": "float", "description": "Latitude"},
+            "lon": {"type": "float", "description": "Longitude"},
+            "year": {"type": "integer", "description": "Year (default: current year)"}
+        },
+        "requires_api_key": False # Mocked
+    },
+    {
+        "name": "ComprehensiveFarmData",
+        "description": "Get comprehensive agricultural data for a location (mocked).",
+        "parameters": {
+            "lat": {"type": "float", "description": "Latitude"},
+            "lon": {"type": "float", "description": "Longitude"},
+            "country": {"type": "string", "description": "Country name for FAO price data (default: India)"},
+            "commodity": {"type": "string", "description": "Commodity name for FAO price data (default: wheat)"}
+        },
+        "requires_api_key": False # Mocked
     }
 ]
 

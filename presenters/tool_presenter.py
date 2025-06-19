@@ -7,23 +7,7 @@ from models import external_apis
 # MCP_TOOLS and API_KEYS will be passed from main.py or a config module.
 # For now, define them here as placeholders to make methods testable in isolation if needed.
 # This will be removed/refactored once main.py passes the actual config.
-TEMP_MCP_TOOLS = [
-    {
-        "name": "OpenWeatherMapAPI",
-        "description": "Get current weather data and forecasts",
-        "parameters": {
-            "lat": {"type": "float", "description": "Latitude"},
-            "lon": {"type": "float", "description": "Longitude"},
-            "q": {"type": "string", "description": "City name (alternative to lat/lon)"}
-        },
-        "requires_api_key": True
-    },
-    # ... (other tools would be listed here if this wasn't temporary)
-]
-TEMP_API_KEYS = {
-    "OPENWEATHER_API_KEY": "your_openweather_key_temp", # Placeholder
-}
-
+# TEMP_MCP_TOOLS and TEMP_API_KEYS are removed as presenter is now initialized with actual config.
 
 class ToolPresenter:
     def __init__(self, mcp_tools: List[Dict], api_keys: Dict):
@@ -58,6 +42,22 @@ class ToolPresenter:
             return await external_apis.call_usgs_earthquake_api(params)
         elif tool_name == "World_Bank_Climate_API":
             return await external_apis.call_worldbank_climate_api(params)
+        # New tools start here
+        elif tool_name == "CHIRPSPrecipitation":
+            return await external_apis.get_chirps_precipitation(params)
+        elif tool_name == "SMAPSoilMoisture":
+            return await external_apis.get_smap_soil_moisture(params)
+        elif tool_name == "GRACEGroundwater":
+            return await external_apis.get_grace_groundwater(params)
+        elif tool_name == "Sentinel2Data":
+            return await external_apis.get_sentinel2_data(params)
+        elif tool_name == "FAOPriceData":
+            return await external_apis.call_fao_price_data(params)
+        elif tool_name == "USDACropScape":
+            return await external_apis.call_usda_cropscape(params)
+        elif tool_name == "ComprehensiveFarmData":
+            return await external_apis.get_comprehensive_farm_data_model(params)
+        # End of new tools
         else:
             raise HTTPException(status_code=400, detail=f"Unknown or not implemented tool: {tool_name}")
 

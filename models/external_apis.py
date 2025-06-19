@@ -3,13 +3,15 @@ from fastapi import HTTPException # For now, models can raise this.
                                  # Later, they might return custom errors.
 from datetime import datetime, timedelta
 import os # For os.getenv if API_KEYS is defined here directly
-from typing import Dict # Added for type hinting
+from typing import Dict, List, Optional, Tuple # Ensure all are present
+
+import pandas # Added based on user's class import, though not used in mocks
 
 # Placeholder for API_KEYS - this should ideally come from a config or be injected
 # For now, to make functions runnable, define it as it was in main.py
 # This will be refined when presenters call these model functions.
 API_KEYS = {
-    "OPENWEATHER_API_KEY": os.getenv("OPENWEATHER_API_KEY"),  # Remove default placeholder
+    "OPENWEATHER_API_KEY": os.getenv("OPENWEATHER_API_KEY", "your_openweather_key"),
     "NASA_API_KEY": os.getenv("NASA_API_KEY", "DEMO_KEY"),
 }
 
@@ -60,15 +62,8 @@ async def call_openmeteo_api(params: Dict) -> Dict:
     if lat is None or lon is None:
         raise HTTPException(status_code=400, detail="Latitude and longitude are required for OpenMeteo.")
 
-    # Fix parameter handling - make them optional with defaults
-    current_params = params.get("current", "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m")
-    hourly_params = params.get("hourly", "temperature_2m,relative_humidity_2m,precipitation")
-
-    # Validate coordinate ranges
-    if not (-90 <= lat <= 90):
-        raise HTTPException(status_code=400, detail="Latitude must be between -90 and 90")
-    if not (-180 <= lon <= 180):
-        raise HTTPException(status_code=400, detail="Longitude must be between -180 and 180")
+    current_params = params.get("current", "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,soil_moisture_0_to_1cm")
+    hourly_params = params.get("hourly", "temperature_2m,relative_humidity_2m,precipitation,soil_moisture_0_to_1cm")
 
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current={current_params}&hourly={hourly_params}&forecast_days=1"
 
@@ -116,99 +111,40 @@ async def call_soilgrids_api(params: Dict) -> Dict:
     if lat is None or lon is None:
         raise HTTPException(status_code=400, detail="Latitude and longitude are required for SoilGrids.")
 
-    # Validate coordinate ranges
-    if not (-90 <= lat <= 90):
-        raise HTTPException(status_code=400, detail="Latitude must be between -90 and 90")
-    if not (-180 <= lon <= 180):
-        raise HTTPException(status_code=400, detail="Longitude must be between -180 and 180")
-
-    # Valid properties for SoilGrids
-    valid_properties = ["bdod", "cec", "cfvo", "clay", "nitrogen", "ocd", "ocs", "phh2o", "sand", "silt", "soc"]
-    valid_depths = ["0-5cm", "5-15cm", "15-30cm", "30-60cm", "60-100cm", "100-200cm"]
-    
-    # Clean and validate properties
     properties_param = params.get("property", "phh2o,soc,sand,clay,silt")
-    requested_props = [p.strip() for p in properties_param.split(",")]
-    valid_props = [p for p in requested_props if p in valid_properties]
-    
-    if not valid_props:
-        valid_props = ["phh2o", "soc", "sand", "clay", "silt"]
-    
-    # Clean and validate depths
     depths_param = params.get("depth", "0-5cm,5-15cm,15-30cm")
-    requested_depths = [d.strip() for d in depths_param.split(",")]
-    valid_depths_list = [d for d in requested_depths if d in valid_depths]
-    
-    if not valid_depths_list:
-        valid_depths_list = ["0-5cm", "5-15cm", "15-30cm"]
 
-    # Try different API endpoints/formats
-    urls_to_try = [
-        # Original format
-        f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property={','.join(valid_props)}&depth={','.join(valid_depths_list)}&value=mean",
-        # Alternative format without value parameter
-        f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property={','.join(valid_props)}&depth={','.join(valid_depths_list)}",
-        # Single property test
-        f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property=sand&depth=0-5cm&value=mean"
-    ]
+    url = f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property={properties_param}&depth={depths_param}&value=mean"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        last_error = None
-        
-        for i, url in enumerate(urls_to_try):
-            try:
-                print(f"Trying SoilGrids URL {i+1}: {url}")
-                response = await client.get(url)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Check if we got valid data
-                    if not data or "properties" not in data:
-                        continue
-                    
-                    # Process the successful response
-                    properties = {}
-                    if "properties" in data and "layers" in data["properties"]:
-                        for prop_layer in data["properties"]["layers"]:
-                            prop_name = prop_layer["name"]
-                            unit_measure = prop_layer.get("unit_measure", {})
-                            properties[prop_name] = {"unit": unit_measure, "depths": {}}
-                            
-                            if "depths" in prop_layer:
-                                for depth_info in prop_layer["depths"]:
-                                    depth_label = depth_info["label"]
-                                    if "values" in depth_info and "mean" in depth_info["values"]:
-                                        value = depth_info["values"]["mean"]
-                                        properties[prop_name]["depths"][depth_label] = value
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
 
-                    return {
-                        "location": {"lat": lat, "lon": lon},
-                        "properties": properties,
-                        "requested_properties": valid_props,
-                        "requested_depths": valid_depths_list,
-                        "api_url_used": url,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                
-                else:
-                    last_error = f"HTTP {response.status_code}: {response.text}"
-                    
-            except httpx.HTTPStatusError as e:
-                last_error = f"HTTP error: {e.response.status_code} - {e.response.text}"
-                continue
-            except httpx.RequestError as e:
-                last_error = f"Request error: {str(e)}"
-                continue
-            except Exception as e:
-                last_error = f"Unexpected error: {str(e)}"
-                continue
-        
-        # If all URLs failed, return a more informative error
-        raise HTTPException(
-            status_code=503, 
-            detail=f"SoilGrids API unavailable. Last error: {last_error}. This location ({lat}, {lon}) might not have soil data available, or the service is temporarily down."
-        )
+            properties = {}
+            if "properties" in data and "layers" in data["properties"]:
+                for prop_layer in data["properties"]["layers"]:
+                    prop_name = prop_layer["name"]
+                    unit_measure = prop_layer["unit_measure"]
+                    properties[prop_name] = {"unit": unit_measure, "depths": {}}
+                    if "depths" in prop_layer:
+                        for depth_info in prop_layer["depths"]:
+                            depth_label = depth_info["label"]
+                            # Ensure 'values' and 'mean' exist
+                            if "values" in depth_info and "mean" in depth_info["values"]:
+                                value = depth_info["values"]["mean"]
+                                properties[prop_name]["depths"][depth_label] = value
+
+            return {
+                "location": {"lat": lat, "lon": lon},
+                "properties": properties,
+                "timestamp": datetime.now().isoformat()
+            }
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"SoilGrids API error: {e.response.text}")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"SoilGrids API request failed: {str(e)}")
 
 async def call_nasa_power_api(params: Dict) -> Dict:
     """Call NASA POWER API (Free)"""
@@ -340,3 +276,167 @@ async def call_worldbank_climate_api(params: Dict) -> Dict:
 # The health_check, list_tools, get_tool, call_real_api, get_free_tools,
 # get_premium_tools, test_api_endpoint, and the if __name__ == "__main__": block
 # also remain in main.py.
+
+# === New Tool Mock Implementations (Based on User's AgriculturalAPIs class) ===
+
+NEW_API_BASE_URLS = {
+    'chirps': 'https://climateserv.servirglobal.net/chirps', # Example, actual API not hit by mock
+    'smap': 'https://n5eil01u.ecs.nsidc.org/SMAP', # Example
+    'grace': 'https://grace.jpl.nasa.gov/data', # Example
+    'sentinel': 'https://catalogue.dataspace.copernicus.eu/odata/v1', # Example
+    'fao': 'http://www.fao.org/faostat/api/v1', # Example
+    'usda_cropscape': 'https://nassgeodata.gmu.edu/CropScapeService' # Example
+}
+
+async def get_chirps_precipitation(params: Dict) -> Dict:
+    # Parameters from user: lat, lon, start_date, end_date, temporal_resolution
+    lat = params.get("lat")
+    lon = params.get("lon")
+    start_date = params.get("start_date")
+    end_date = params.get("end_date")
+    temporal_resolution = params.get("temporal_resolution", "daily")
+
+    # Mocked CHIRPS API call
+    print(f"Mock CHIRPS API call for lat:{lat}, lon:{lon}, start:{start_date}, end:{end_date}, res:{temporal_resolution}")
+    # Simulated response from user's code
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "temporal_resolution": temporal_resolution,
+        "precipitation_data": [
+            {"date": "2024-06-01", "precipitation_mm": 12.5},
+            {"date": "2024-06-02", "precipitation_mm": 0.0},
+            {"date": "2024-06-03", "precipitation_mm": 8.2}
+        ],
+        "monthly_total": 156.7,
+        "anomaly_percent": 15.2,
+        "data_source": "Mocked CHIRPS Data"
+    }
+
+async def get_smap_soil_moisture(params: Dict) -> Dict:
+    # Parameters from user: lat, lon, date, product
+    lat = params.get("lat")
+    lon = params.get("lon")
+    date = params.get("date")
+    product = params.get("product", "SPL3SMP")
+
+    print(f"Mock SMAP API call for lat:{lat}, lon:{lon}, date:{date}, product:{product}")
+    # Simulated response
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "soil_moisture": 0.25,
+        "soil_moisture_anomaly": -0.05,
+        "vegetation_opacity": 0.45,
+        "acquisition_date": date,
+        "quality_flag": "good",
+        "data_source": "Mocked SMAP Data"
+    }
+
+async def get_grace_groundwater(params: Dict) -> Dict:
+    # Parameters from user: lat, lon, start_date, end_date
+    lat = params.get("lat")
+    lon = params.get("lon")
+    start_date = params.get("start_date")
+    end_date = params.get("end_date")
+
+    print(f"Mock GRACE API call for lat:{lat}, lon:{lon}, start:{start_date}, end:{end_date}")
+    # Simulated response
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "groundwater_storage_cm": -2.5,
+        "storage_anomaly_cm": -5.2,
+        "trend_cm_per_year": -0.8,
+        "acquisition_date": end_date,
+        "data_source": "Mocked GRACE Data"
+    }
+
+async def get_sentinel2_data(params: Dict) -> Dict:
+    # Parameters from user: lat, lon, start_date, end_date, cloud_cover_max, bands
+    lat = params.get("lat")
+    lon = params.get("lon")
+    start_date = params.get("start_date")
+    end_date = params.get("end_date")
+    cloud_cover_max = params.get("cloud_cover_max", 20)
+    bands = params.get("bands", ['B04', 'B08', 'B11']) # Default bands
+
+    print(f"Mock Sentinel-2 API call for lat:{lat}, lon:{lon}, start:{start_date}, end:{end_date}, cloud:{cloud_cover_max}, bands:{bands}")
+    # Simulated response
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "satellite": "Sentinel-2",
+        "acquisition_date": end_date, # Example, should match query
+        "cloud_coverage": cloud_cover_max - 5, # Example
+        "ndvi": 0.78, # Example
+        "bands": {band: 0.1 * (i+1) for i, band in enumerate(bands)}, # Example
+        "scene_id": "S2A_MSIL2A_SIMULATED_SCENE_ID",
+        "data_source": "Mocked Sentinel-2 Data"
+    }
+
+async def call_fao_price_data(params: Dict) -> Dict:
+    # Parameters from user: country, commodity
+    country = params.get("country")
+    commodity = params.get("commodity")
+
+    print(f"Mock FAO Price API call for country:{country}, commodity:{commodity}")
+    # Simulated response
+    return {
+        "commodity": commodity.lower() if commodity else "unknown",
+        "country": country,
+        "price_usd_per_tonne": 220, # Example
+        "currency": "USD",
+        "unit": "per tonne",
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "data_source": "Mocked FAO Price Data"
+    }
+
+async def call_usda_cropscape(params: Dict) -> Dict:
+    # Parameters from user: lat, lon
+    lat = params.get("lat")
+    lon = params.get("lon")
+    year = params.get("year", datetime.now().year) # Allow year override
+
+    print(f"Mock USDA CropScape API call for lat:{lat}, lon:{lon}, year:{year}")
+    # Simulated response
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "dominant_crop": "Maize (Simulated)",
+        "confidence_score": 0.92,
+        "crop_code": 1, # Example
+        "year": year,
+        "data_source": "Mocked USDA CropScape Data"
+    }
+
+async def get_comprehensive_farm_data_model(params: Dict) -> Dict:
+    # Parameters from user: lat, lon, country (for FAO), commodity (for FAO)
+    lat = params.get("lat")
+    lon = params.get("lon")
+    country = params.get("country", "India") # Default for FAO
+    commodity = params.get("commodity", "wheat") # Default for FAO
+
+    # Dates for time-ranged data, can be made parameters too
+    today = datetime.now().strftime("%Y-%m-%d")
+    last_month_start = (datetime.now() - timedelta(days=30)).replace(day=1).strftime("%Y-%m-%d")
+    last_month_end = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m-%d")
+    current_year = datetime.now().year
+
+    print(f"Mock Comprehensive Farm Data call for lat:{lat}, lon:{lon}")
+
+    # Parameters for individual calls
+    chirps_params = {"lat": lat, "lon": lon, "start_date": last_month_start, "end_date": today, "temporal_resolution": "daily"}
+    smap_params = {"lat": lat, "lon": lon, "date": today}
+    grace_params = {"lat": lat, "lon": lon, "start_date": last_month_start, "end_date": today}
+    sentinel_params = {"lat": lat, "lon": lon, "start_date": last_month_start, "end_date": today}
+    fao_params = {"country": country, "commodity": commodity}
+    usda_params = {"lat": lat, "lon": lon, "year": current_year}
+
+    comprehensive_data = {
+        "location": {"lat": lat, "lon": lon},
+        "date_generated": today,
+        "precipitation": await get_chirps_precipitation(chirps_params),
+        "soil_moisture": await get_smap_soil_moisture(smap_params),
+        "groundwater": await get_grace_groundwater(grace_params),
+        "satellite_imagery_summary": await get_sentinel2_data(sentinel_params), # Renamed for clarity
+        "crop_prices": await call_fao_price_data(fao_params),
+        "crop_identification": await call_usda_cropscape(usda_params),
+        "data_source": "Mocked Comprehensive Farm Data"
+    }
+    return comprehensive_data
