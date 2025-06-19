@@ -111,99 +111,40 @@ async def call_soilgrids_api(params: Dict) -> Dict:
     if lat is None or lon is None:
         raise HTTPException(status_code=400, detail="Latitude and longitude are required for SoilGrids.")
 
-    # Validate coordinate ranges
-    if not (-90 <= lat <= 90):
-        raise HTTPException(status_code=400, detail="Latitude must be between -90 and 90")
-    if not (-180 <= lon <= 180):
-        raise HTTPException(status_code=400, detail="Longitude must be between -180 and 180")
-
-    # Valid properties for SoilGrids
-    valid_properties = ["bdod", "cec", "cfvo", "clay", "nitrogen", "ocd", "ocs", "phh2o", "sand", "silt", "soc"]
-    valid_depths = ["0-5cm", "5-15cm", "15-30cm", "30-60cm", "60-100cm", "100-200cm"]
-    
-    # Clean and validate properties
     properties_param = params.get("property", "phh2o,soc,sand,clay,silt")
-    requested_props = [p.strip() for p in properties_param.split(",")]
-    valid_props = [p for p in requested_props if p in valid_properties]
-    
-    if not valid_props:
-        valid_props = ["phh2o", "soc", "sand", "clay", "silt"]
-    
-    # Clean and validate depths
     depths_param = params.get("depth", "0-5cm,5-15cm,15-30cm")
-    requested_depths = [d.strip() for d in depths_param.split(",")]
-    valid_depths_list = [d for d in requested_depths if d in valid_depths]
-    
-    if not valid_depths_list:
-        valid_depths_list = ["0-5cm", "5-15cm", "15-30cm"]
 
-    # Try different API endpoints/formats
-    urls_to_try = [
-        # Original format
-        f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property={','.join(valid_props)}&depth={','.join(valid_depths_list)}&value=mean",
-        # Alternative format without value parameter
-        f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property={','.join(valid_props)}&depth={','.join(valid_depths_list)}",
-        # Single property test
-        f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property=sand&depth=0-5cm&value=mean"
-    ]
+    url = f"https://rest.isric.org/soilgrids/v2.0/properties/query?lon={lon}&lat={lat}&property={properties_param}&depth={depths_param}&value=mean"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        last_error = None
-        
-        for i, url in enumerate(urls_to_try):
-            try:
-                print(f"Trying SoilGrids URL {i+1}: {url}")
-                response = await client.get(url)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Check if we got valid data
-                    if not data or "properties" not in data:
-                        continue
-                    
-                    # Process the successful response
-                    properties = {}
-                    if "properties" in data and "layers" in data["properties"]:
-                        for prop_layer in data["properties"]["layers"]:
-                            prop_name = prop_layer["name"]
-                            unit_measure = prop_layer.get("unit_measure", {})
-                            properties[prop_name] = {"unit": unit_measure, "depths": {}}
-                            
-                            if "depths" in prop_layer:
-                                for depth_info in prop_layer["depths"]:
-                                    depth_label = depth_info["label"]
-                                    if "values" in depth_info and "mean" in depth_info["values"]:
-                                        value = depth_info["values"]["mean"]
-                                        properties[prop_name]["depths"][depth_label] = value
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
 
-                    return {
-                        "location": {"lat": lat, "lon": lon},
-                        "properties": properties,
-                        "requested_properties": valid_props,
-                        "requested_depths": valid_depths_list,
-                        "api_url_used": url,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                
-                else:
-                    last_error = f"HTTP {response.status_code}: {response.text}"
-                    
-            except httpx.HTTPStatusError as e:
-                last_error = f"HTTP error: {e.response.status_code} - {e.response.text}"
-                continue
-            except httpx.RequestError as e:
-                last_error = f"Request error: {str(e)}"
-                continue
-            except Exception as e:
-                last_error = f"Unexpected error: {str(e)}"
-                continue
-        
-        # If all URLs failed, return a more informative error
-        raise HTTPException(
-            status_code=503, 
-            detail=f"SoilGrids API unavailable. Last error: {last_error}. This location ({lat}, {lon}) might not have soil data available, or the service is temporarily down."
-        )
+            properties = {}
+            if "properties" in data and "layers" in data["properties"]:
+                for prop_layer in data["properties"]["layers"]:
+                    prop_name = prop_layer["name"]
+                    unit_measure = prop_layer["unit_measure"]
+                    properties[prop_name] = {"unit": unit_measure, "depths": {}}
+                    if "depths" in prop_layer:
+                        for depth_info in prop_layer["depths"]:
+                            depth_label = depth_info["label"]
+                            # Ensure 'values' and 'mean' exist
+                            if "values" in depth_info and "mean" in depth_info["values"]:
+                                value = depth_info["values"]["mean"]
+                                properties[prop_name]["depths"][depth_label] = value
+
+            return {
+                "location": {"lat": lat, "lon": lon},
+                "properties": properties,
+                "timestamp": datetime.now().isoformat()
+            }
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"SoilGrids API error: {e.response.text}")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"SoilGrids API request failed: {str(e)}")
 
 async def call_nasa_power_api(params: Dict) -> Dict:
     """Call NASA POWER API (Free)"""
